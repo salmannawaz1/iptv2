@@ -1,5 +1,5 @@
 services:
-  # Backend API Server ONLY
+  # Backend API Server
   - type: web
     name: iptv-backend
     env: node
@@ -9,3 +9,14 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+  
+  # Frontend Admin Panel
+  - type: web
+    name: iptv-panel
+    env: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://iptv-server-z1l0.onrender.com/api
