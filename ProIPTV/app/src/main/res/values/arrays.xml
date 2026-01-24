@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="quality_options">
+        <item>Auto</item>
+        <item>High (1080p)</item>
+        <item>Medium (720p)</item>
+        <item>Low (480p)</item>
+    </string-array>
+    
+    <string-array name="expiry_options">
+        <item>7 Days</item>
+        <item>15 Days</item>
+        <item>30 Days</item>
+        <item>90 Days</item>
+        <item>180 Days</item>
+        <item>365 Days</item>
+    </string-array>
+</resources>

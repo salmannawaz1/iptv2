@@ -1,0 +1,6 @@
+@echo off
+echo Restarting backend...
+taskkill /F /IM node.exe 2>nul
+timeout /t 2 >nul
+echo Starting backend...
+npm start

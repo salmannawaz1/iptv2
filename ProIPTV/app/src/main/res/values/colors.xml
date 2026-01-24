@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="primary">#6200EE</color>
+    <color name="primary_dark">#3700B3</color>
+    <color name="primary_variant">#BB86FC</color>
+    <color name="secondary">#03DAC6</color>
+    <color name="secondary_variant">#018786</color>
+    
+    <!-- Background Colors -->
+    <color name="background">#121212</color>
+    <color name="background_light">#1E1E1E</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="surface_variant">#2D2D2D</color>
+    <color name="card_background">#252525</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3B3B3</color>
+    <color name="text_hint">#808080</color>
+    <color name="text_on_primary">#FFFFFF</color>
+    
+    <!-- Status Colors -->
+    <color name="success">#4CAF50</color>
+    <color name="error">#F44336</color>
+    <color name="warning">#FF9800</color>
+    <color name="info">#2196F3</color>
+    
+    <!-- Live TV Colors -->
+    <color name="live_indicator">#FF0000</color>
+    <color name="channel_card">#2A2A2A</color>
+    <color name="epg_current">#6200EE</color>
+    <color name="epg_past">#404040</color>
+    
+    <!-- Player Colors -->
+    <color name="player_background">#000000</color>
+    <color name="player_controls">#80000000</color>
+    
+    <!-- Admin Panel Colors -->
+    <color name="admin_active">#4CAF50</color>
+    <color name="admin_expired">#F44336</color>
+    <color name="admin_disabled">#9E9E9E</color>
+    
+    <!-- Shimmer -->
+    <color name="shimmer_base">#2D2D2D</color>
+    <color name="shimmer_highlight">#3D3D3D</color>
+    
+    <!-- App Icon -->
+    <color name="ic_launcher_background">#6200EE</color>
+</resources>
