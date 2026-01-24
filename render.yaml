@@ -1,19 +1,11 @@
 services:
-  # Backend API Server
+  # Backend API Server ONLY
   - type: web
     name: iptv-backend
     env: node
-    rootDir: .  # Use root directory
-    buildCommand: cd server && npm install
-    startCommand: cd server && npm start
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      
-  # Frontend Panel (optional)
-  - type: web
-    name: iptv-panel
-    env: static
-    rootDir: client
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
