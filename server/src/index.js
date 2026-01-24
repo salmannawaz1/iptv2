@@ -30,6 +30,22 @@ async function startServer() {
   app.use('/api/playlists', playlistRoutes);
   app.use('/api/stats', statsRoutes);
   
+  // Root welcome page
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'IPTV Reseller API',
+      status: 'online',
+      version: '1.0.0',
+      endpoints: {
+        xtream_api: '/player_api.php',
+        health: '/api/health',
+        login: '/api/auth/login'
+      },
+      documentation: 'Use /player_api.php for Xtream Codes API',
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Xtream Codes API compatibility (for IPTV apps)
   app.use('/', xtreamRoutes);
 
