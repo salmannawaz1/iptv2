@@ -9,6 +9,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: JWT_SECRET
+        value: your-super-secret-jwt-key-2024
+      - key: JWT_EXPIRES_IN
+        value: 7d
   
   # Frontend Admin Panel
   - type: web
