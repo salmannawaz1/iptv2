@@ -5,7 +5,13 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 const dbPath = path.join(__dirname, '../../data/iptv.db');
+const dbDir = path.dirname(dbPath);
 let db = null;
+
+// Ensure data directory exists
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 // Wrapper to make sql.js API similar to better-sqlite3
 function createDbWrapper(database) {
