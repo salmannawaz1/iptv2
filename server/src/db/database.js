@@ -2,13 +2,56 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-// PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Required for Supabase
+// Parse DATABASE_URL and use connection pooler (IPv4 compatible)
+let dbConfig;
+if (process.env.DATABASE_URL) {
+  try {
+    const dbUrl = new URL(process.env.DATABASE_URL);
+    const usePooler = dbUrl.hostname.includes('supabase.co');
+    
+    if (usePooler) {
+      // Use Supabase connection pooler for IPv4 compatibility
+      const poolerHost = dbUrl.hostname.replace('db.', 'aws-0-us-east-1.pooler.');
+      console.log(`🔄 Using Supabase pooler: ${poolerHost}:6543`);
+      
+      dbConfig = {
+        user: dbUrl.username,
+        password: dbUrl.password,
+        host: poolerHost,
+        port: 6543,
+        database: dbUrl.pathname.slice(1),
+        ssl: {
+          rejectUnauthorized: false
+        }
+      };
+    } else {
+      dbConfig = {
+        user: dbUrl.username,
+        password: dbUrl.password,
+        host: dbUrl.hostname,
+        port: parseInt(dbUrl.port || '5432'),
+        database: dbUrl.pathname.slice(1),
+        ssl: {
+          rejectUnauthorized: false
+        }
+      };
+    }
+  } catch (err) {
+    console.error('❌ Failed to parse DATABASE_URL:', err.message);
+    dbConfig = {
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false
+      }
+    };
   }
-});
+} else {
+  console.error('❌ DATABASE_URL not set!');
+  throw new Error('DATABASE_URL environment variable is required');
+}
+
+// PostgreSQL connection pool
+const pool = new Pool(dbConfig);
 
 let db = null;
 
