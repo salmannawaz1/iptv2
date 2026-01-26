@@ -10,18 +10,20 @@ if (process.env.DATABASE_URL) {
     const usePooler = dbUrl.hostname.includes('supabase.co');
     
     if (usePooler) {
-      // Use Supabase Session Mode pooler (port 6543) for better compatibility
-      console.log(`🔄 Using Supabase Session Mode pooler on port 6543`);
+      // Force IPv4 connection to avoid IPv6 issues on Render
+      console.log(`🔄 Using IPv4-only connection to Supabase`);
       
       dbConfig = {
         user: dbUrl.username,
         password: dbUrl.password,
         host: dbUrl.hostname, // Keep original hostname
-        port: 6543, // Use Session Mode pooler port
+        port: 5432, // Use direct connection port
         database: dbUrl.pathname.slice(1),
         ssl: {
           rejectUnauthorized: false
-        }
+        },
+        // Force IPv4 connection
+        family: 4
       };
     } else {
       dbConfig = {
