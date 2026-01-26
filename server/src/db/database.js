@@ -1,6 +1,11 @@
+const dns = require('dns');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+
+// BULLETPROOF: Force IPv4 DNS resolution globally
+// This ensures ALL network connections prefer IPv4 over IPv6
+dns.setDefaultResultOrder('ipv4first');
 
 // Parse DATABASE_URL and use connection pooler (IPv4 compatible)
 let dbConfig;
@@ -10,20 +15,18 @@ if (process.env.DATABASE_URL) {
     const usePooler = dbUrl.hostname.includes('supabase.co');
     
     if (usePooler) {
-      // Force IPv4 connection to avoid IPv6 issues on Render
-      console.log(`🔄 Using IPv4-only connection to Supabase`);
+      // Using IPv4-only mode via dns.setDefaultResultOrder('ipv4first')
+      console.log(`🔄 Using Supabase with IPv4-first DNS resolution`);
       
       dbConfig = {
         user: dbUrl.username,
-        password: dbUrl.password,
-        host: dbUrl.hostname, // Keep original hostname
-        port: 5432, // Use direct connection port
+        password: decodeURIComponent(dbUrl.password), // Decode special characters
+        host: dbUrl.hostname,
+        port: parseInt(dbUrl.port || '5432'),
         database: dbUrl.pathname.slice(1),
         ssl: {
           rejectUnauthorized: false
-        },
-        // Force IPv4 connection
-        family: 4
+        }
       };
     } else {
       dbConfig = {
