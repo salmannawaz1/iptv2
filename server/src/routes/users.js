@@ -7,19 +7,19 @@ const { authenticateToken, isReseller, isActiveReseller } = require('../middlewa
 const router = express.Router();
 
 // Get all users (for reseller - only their users, for admin - all users)
-router.get('/', authenticateToken, isReseller, isActiveReseller, (req, res) => {
+router.get('/', authenticateToken, isReseller, isActiveReseller, async (req, res) => {
   try {
     const db = getDb();
     let users;
     if (req.user.role === 'admin') {
-      users = db.prepare(`
+      users = await db.prepare(`
         SELECT u.*, r.username as reseller_name 
         FROM users u 
         LEFT JOIN resellers r ON u.reseller_id = r.id
         ORDER BY u.created_at DESC
       `).all();
     } else {
-      users = db.prepare(`
+      users = await db.prepare(`
         SELECT * FROM users WHERE reseller_id = ? ORDER BY created_at DESC
       `).all(req.user.id);
     }

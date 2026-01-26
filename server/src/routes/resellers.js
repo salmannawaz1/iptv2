@@ -7,10 +7,10 @@ const { authenticateToken, isAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Get all resellers (admin only)
-router.get('/', authenticateToken, isAdmin, (req, res) => {
+router.get('/', authenticateToken, isAdmin, async (req, res) => {
   try {
     const db = getDb();
-    const resellers = db.prepare(`
+    const resellers = await db.prepare(`
       SELECT r.id, r.username, r.email, r.credits, r.max_users, r.is_active, r.created_at,
              (SELECT COUNT(*) FROM users WHERE reseller_id = r.id) as user_count
       FROM resellers r
@@ -25,10 +25,10 @@ router.get('/', authenticateToken, isAdmin, (req, res) => {
 });
 
 // Get single reseller
-router.get('/:id', authenticateToken, isAdmin, (req, res) => {
+router.get('/:id', authenticateToken, isAdmin, async (req, res) => {
   try {
     const db = getDb();
-    const reseller = db.prepare(`
+    const reseller = await db.prepare(`
       SELECT r.id, r.username, r.email, r.credits, r.max_users, r.is_active, r.created_at,
              (SELECT COUNT(*) FROM users WHERE reseller_id = r.id) as user_count
       FROM resellers r

@@ -5,7 +5,7 @@ const { authenticateToken, isReseller, isActiveReseller } = require('../middlewa
 const router = express.Router();
 
 // Get dashboard statistics
-router.get('/dashboard', authenticateToken, isReseller, isActiveReseller, (req, res) => {
+router.get('/dashboard', authenticateToken, isReseller, isActiveReseller, async (req, res) => {
   try {
     const db = getDb();
     const now = new Date().toISOString();
@@ -13,20 +13,20 @@ router.get('/dashboard', authenticateToken, isReseller, isActiveReseller, (req, 
 
     if (req.user.role === 'admin') {
       // Admin sees everything
-      const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-      const activeUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE is_active = 1 AND expiry_date > ?').get(now).count;
-      const expiredUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE expiry_date <= ?').get(now).count;
-      const totalResellers = db.prepare('SELECT COUNT(*) as count FROM resellers').get().count;
-      const activeResellers = db.prepare('SELECT COUNT(*) as count FROM resellers WHERE is_active = 1').get().count;
+      const totalUsers = (await db.prepare('SELECT COUNT(*) as count FROM users').get()).count;
+      const activeUsers = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE is_active = 1 AND expiry_date > ?').get(now)).count;
+      const expiredUsers = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE expiry_date <= ?').get(now)).count;
+      const totalResellers = (await db.prepare('SELECT COUNT(*) as count FROM resellers').get()).count;
+      const activeResellers = (await db.prepare('SELECT COUNT(*) as count FROM resellers WHERE is_active = 1').get()).count;
 
       // Users created today
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const usersToday = db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at >= ?').get(today.toISOString()).count;
+      const usersToday = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at >= ?').get(today.toISOString())).count;
 
       // Users created this month
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const usersThisMonth = db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at >= ?').get(monthStart.toISOString()).count;
+      const usersThisMonth = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE created_at >= ?').get(monthStart.toISOString())).count;
 
       stats = {
         total_users: totalUsers,
@@ -40,18 +40,18 @@ router.get('/dashboard', authenticateToken, isReseller, isActiveReseller, (req, 
       };
     } else {
       // Reseller sees only their stats
-      const reseller = db.prepare('SELECT credits, max_users FROM resellers WHERE id = ?').get(req.user.id);
-      const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ?').get(req.user.id).count;
-      const activeUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ? AND is_active = 1 AND expiry_date > ?').get(req.user.id, now).count;
-      const expiredUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ? AND expiry_date <= ?').get(req.user.id, now).count;
+      const reseller = (await db.prepare('SELECT credits, max_users FROM resellers WHERE id = ?').get(req.user.id));
+      const totalUsers = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ?').get(req.user.id)).count;
+      const activeUsers = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ? AND is_active = 1 AND expiry_date > ?').get(req.user.id, now)).count;
+      const expiredUsers = (await db.prepare('SELECT COUNT(*) as count FROM users WHERE reseller_id = ? AND expiry_date <= ?').get(req.user.id, now)).count;
 
       // Users expiring soon (within 7 days)
       const weekFromNow = new Date();
       weekFromNow.setDate(weekFromNow.getDate() + 7);
-      const expiringSoon = db.prepare(`
+      const expiringSoon = (await db.prepare(`
         SELECT COUNT(*) as count FROM users 
         WHERE reseller_id = ? AND expiry_date > ? AND expiry_date <= ?
-      `).get(req.user.id, now, weekFromNow.toISOString()).count;
+      `).get(req.user.id, now, weekFromNow.toISOString())).count;
 
       stats = {
         credits: reseller.credits,
@@ -72,24 +72,27 @@ router.get('/dashboard', authenticateToken, isReseller, isActiveReseller, (req, 
 });
 
 // Get recent activity
-router.get('/activity', authenticateToken, isReseller, isActiveReseller, (req, res) => {
+router.get('/activity', authenticateToken, isReseller, isActiveReseller, async (req, res) => {
   try {
     const db = getDb();
+    const limit = parseInt(req.query.limit) || 50;
     let logs;
 
     if (req.user.role === 'admin') {
-      logs = db.prepare(`
+      logs = await db.prepare(`
         SELECT * FROM activity_logs 
         ORDER BY created_at DESC 
-        LIMIT 50
-      `).all();
+        LIMIT ?
+      `).all(limit);
     } else {
-      logs = db.prepare(`
+      logs = await db.prepare(`
         SELECT * FROM activity_logs 
-        WHERE actor_type = 'reseller' AND actor_id = ?
+        WHERE actor_id = ? OR actor_id IN (
+          SELECT id FROM users WHERE reseller_id = ?
+        )
         ORDER BY created_at DESC 
-        LIMIT 50
-      `).all(req.user.id);
+        LIMIT ?
+      `).all(req.user.id, req.user.id, limit);
     }
 
     res.json(logs.map(log => ({
@@ -103,7 +106,7 @@ router.get('/activity', authenticateToken, isReseller, isActiveReseller, (req, r
 });
 
 // Get users expiring soon
-router.get('/expiring', authenticateToken, isReseller, isActiveReseller, (req, res) => {
+router.get('/expiring', authenticateToken, isReseller, isActiveReseller, async (req, res) => {
   try {
     const db = getDb();
     const days = parseInt(req.query.days) || 7;
@@ -114,15 +117,15 @@ router.get('/expiring', authenticateToken, isReseller, isActiveReseller, (req, r
     let users;
 
     if (req.user.role === 'admin') {
-      users = db.prepare(`
-        SELECT u.*, r.username as reseller_name
-        FROM users u
+      users = await db.prepare(`
+        SELECT u.*, r.username as reseller_name 
+        FROM users u 
         LEFT JOIN resellers r ON u.reseller_id = r.id
         WHERE u.expiry_date > ? AND u.expiry_date <= ?
         ORDER BY u.expiry_date ASC
       `).all(now, future.toISOString());
     } else {
-      users = db.prepare(`
+      users = await db.prepare(`
         SELECT * FROM users 
         WHERE reseller_id = ? AND expiry_date > ? AND expiry_date <= ?
         ORDER BY expiry_date ASC

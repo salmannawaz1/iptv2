@@ -9,10 +9,10 @@ const router = express.Router();
 const STREAM_SERVER = process.env.STREAM_SERVER_URL || 'http://localhost:8080';
 
 // Get all bouquets
-router.get('/bouquets', authenticateToken, (req, res) => {
+router.get('/bouquets', authenticateToken, async (req, res) => {
   try {
     const db = getDb();
-    const bouquets = db.prepare('SELECT * FROM bouquets ORDER BY name').all();
+    const bouquets = await db.prepare('SELECT * FROM bouquets ORDER BY name').all();
     res.json(bouquets.map(b => ({
       ...b,
       channels: JSON.parse(b.channels || '[]')
@@ -24,7 +24,7 @@ router.get('/bouquets', authenticateToken, (req, res) => {
 });
 
 // Create bouquet (admin only)
-router.post('/bouquets', authenticateToken, isAdmin, (req, res) => {
+router.post('/bouquets', authenticateToken, isAdmin, async (req, res) => {
   try {
     const db = getDb();
     const { name, description, channels } = req.body;
@@ -34,7 +34,7 @@ router.post('/bouquets', authenticateToken, isAdmin, (req, res) => {
     }
 
     const bouquetId = uuidv4();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO bouquets (id, name, description, channels)
       VALUES (?, ?, ?, ?)
     `).run(bouquetId, name, description || '', JSON.stringify(channels || []));
