@@ -67,7 +67,7 @@ router.get('/:id', authenticateToken, isReseller, isActiveReseller, (req, res) =
 router.post('/', authenticateToken, isReseller, isActiveReseller, (req, res) => {
   try {
     const db = getDb();
-    const { username, password, max_connections, expiry_days, notes, bouquet_ids, m3u_url } = req.body;
+    const { username, password, max_connections, expiry_days, notes, bouquet_ids, m3u_url, m3u_playlist_id } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password required' });
@@ -118,11 +118,12 @@ router.post('/', authenticateToken, isReseller, isActiveReseller, (req, res) => 
     const userNotes = notes || '';
     const maxConn = parseInt(max_connections) || 1;
     const userM3uUrl = m3u_url || '';
+    const userPlaylistId = m3u_playlist_id || null;
 
     db.prepare(`
-      INSERT INTO users (id, username, password, max_connections, expiry_date, reseller_id, notes, m3u_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, username, hashedPassword, maxConn, expiryDate.toISOString(), resellerId, userNotes, userM3uUrl);
+      INSERT INTO users (id, username, password, max_connections, expiry_date, reseller_id, notes, m3u_url, m3u_playlist_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, username, hashedPassword, maxConn, expiryDate.toISOString(), resellerId, userNotes, userM3uUrl, userPlaylistId);
 
     // Assign bouquets
     if (bouquet_ids && bouquet_ids.length > 0) {
@@ -162,7 +163,7 @@ router.put('/:id', authenticateToken, isReseller, isActiveReseller, (req, res) =
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { password, max_connections, is_active, expiry_date, notes, bouquet_ids, m3u_url } = req.body;
+    const { password, max_connections, is_active, expiry_date, notes, bouquet_ids, m3u_url, m3u_playlist_id } = req.body;
 
     let updates = [];
     let params = [];
@@ -190,6 +191,10 @@ router.put('/:id', authenticateToken, isReseller, isActiveReseller, (req, res) =
     if (m3u_url !== undefined) {
       updates.push('m3u_url = ?');
       params.push(m3u_url);
+    }
+    if (m3u_playlist_id !== undefined) {
+      updates.push('m3u_playlist_id = ?');
+      params.push(m3u_playlist_id || null);
     }
 
     if (updates.length > 0) {

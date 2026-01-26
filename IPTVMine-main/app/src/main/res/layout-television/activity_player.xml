@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-optimized player layout with larger controls and better focus handling -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Player View with TV-optimized controller -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_centerInParent="true"
+        android:visibility="visible"
+        android:background="@android:color/black"
+        app:controller_layout_id="@layout/custom_controller"
+        app:player_layout_id="@layout/exo_player_view"
+        app:use_controller="true"
+        app:resize_mode="fit"
+        app:show_timeout="5000"
+        app:hide_on_touch="false"
+        app:show_buffering="always" />
+
+    <!-- Large Loading Indicator for TV -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="96dp"
+        android:layout_height="96dp"
+        android:layout_centerInParent="true"
+        android:visibility="visible"
+        android:indeterminateTint="@color/tv_focus_blue" />
+
+    <!-- Error Message with larger text for TV -->
+    <TextView
+        android:id="@+id/errorTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:gravity="center"
+        android:paddingHorizontal="48dp"
+        android:text="Channel not available"
+        android:textSize="28sp"
+        android:visibility="gone"
+        android:textColor="@android:color/white" />
+</RelativeLayout>

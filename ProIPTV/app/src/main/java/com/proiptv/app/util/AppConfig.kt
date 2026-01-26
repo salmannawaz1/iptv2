@@ -3,9 +3,9 @@ package com.proiptv.app.util
 object AppConfig {
     // List of possible server URLs - app will try each one
     private val SERVER_URLS = listOf(
-        "http://192.168.59.122:5000",  // WiFi network 1
-        "http://192.168.100.78:5000",  // WiFi network 2
-        "http://localhost:5000"         // For emulator/testing
+        "http://192.168.100.78:5000",             // Your local WiFi (FIRST PRIORITY)
+        "https://iptv-server-z1l0.onrender.com",  // Online Render server
+        "http://localhost:5000"                    // For emulator/testing
     )
     
     // API endpoint for Xtream Codes

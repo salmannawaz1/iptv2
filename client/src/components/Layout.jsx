@@ -8,7 +8,8 @@ import {
   LogOut,
   Tv,
   Menu,
-  X
+  X,
+  ListMusic
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -26,6 +27,7 @@ export default function Layout() {
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/users', icon: Users, label: 'Users' },
     ...(user?.role === 'admin' ? [{ to: '/resellers', icon: UserCog, label: 'Resellers' }] : []),
+    ...(user?.role === 'admin' ? [{ to: '/playlists', icon: ListMusic, label: 'Playlists' }] : []),
     { to: '/settings', icon: Settings, label: 'Settings' },
   ]
 

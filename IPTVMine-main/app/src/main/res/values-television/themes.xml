@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-specific theme with Leanback styling -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    
+    <!-- TV Application Theme -->
+    <style name="Base.Theme.IPTV" parent="Theme.Leanback">
+        <!-- TV-specific colors -->
+        <item name="android:colorBackground">@color/tv_background</item>
+        <item name="android:windowBackground">@color/tv_background</item>
+        <item name="colorPrimary">@color/tv_focus_blue</item>
+        <item name="colorPrimaryDark">@color/tv_focus_blue_dark</item>
+        <item name="colorAccent">@color/tv_focus_blue</item>
+        
+        <!-- Remove status bar on TV -->
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        
+        <!-- Focus handling -->
+        <item name="android:selectableItemBackground">@drawable/tv_item_selector</item>
+    </style>
+
+    <style name="Theme.IPTV" parent="Base.Theme.IPTV" />
+    
+    <!-- TV Button Style -->
+    <style name="TvButtonStyle">
+        <item name="android:minWidth">64dp</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:focusable">true</item>
+        <item name="android:background">@drawable/tv_button_selector</item>
+    </style>
+    
+    <!-- TV Text Style -->
+    <style name="TvTextStyle">
+        <item name="android:textSize">18sp</item>
+        <item name="android:textColor">@color/tv_text_primary</item>
+    </style>
+    
+    <!-- TV Title Style -->
+    <style name="TvTitleStyle">
+        <item name="android:textSize">24sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/tv_text_primary</item>
+    </style>
+</resources>

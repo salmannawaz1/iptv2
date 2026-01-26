@@ -1,227 +1,255 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-const dbPath = path.join(__dirname, '../../data/iptv.db');
-const dbDir = path.dirname(dbPath);
+// PostgreSQL connection pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Required for Supabase
+  }
+});
+
 let db = null;
 
-// Ensure data directory exists
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+console.log('🐘 Connecting to PostgreSQL database...');
 
-// Wrapper to make sql.js API similar to better-sqlite3
-function createDbWrapper(database) {
+// Wrapper to make PostgreSQL API similar to SQLite for compatibility
+function createDbWrapper(pgPool) {
   return {
     prepare: (sql) => ({
-      run: (...params) => {
-        database.run(sql, params);
-        saveDatabase();
-      },
-      get: (...params) => {
-        const stmt = database.prepare(sql);
-        stmt.bind(params);
-        if (stmt.step()) {
-          const row = stmt.getAsObject();
-          stmt.free();
-          return row;
+      run: async (...params) => {
+        // Convert SQLite ? placeholders to PostgreSQL $1, $2, etc.
+        let pgSql = sql;
+        let paramIndex = 1;
+        while (pgSql.includes('?')) {
+          pgSql = pgSql.replace('?', `$${paramIndex}`);
+          paramIndex++;
         }
-        stmt.free();
-        return undefined;
+        await pgPool.query(pgSql, params);
       },
-      all: (...params) => {
-        const results = [];
-        const stmt = database.prepare(sql);
-        stmt.bind(params);
-        while (stmt.step()) {
-          results.push(stmt.getAsObject());
+      get: async (...params) => {
+        let pgSql = sql;
+        let paramIndex = 1;
+        while (pgSql.includes('?')) {
+          pgSql = pgSql.replace('?', `$${paramIndex}`);
+          paramIndex++;
         }
-        stmt.free();
-        return results;
+        const result = await pgPool.query(pgSql, params);
+        return result.rows[0] || undefined;
+      },
+      all: async (...params) => {
+        let pgSql = sql;
+        let paramIndex = 1;
+        while (pgSql.includes('?')) {
+          pgSql = pgSql.replace('?', `$${paramIndex}`);
+          paramIndex++;
+        }
+        const result = await pgPool.query(pgSql, params);
+        return result.rows;
       }
     }),
-    exec: (sql) => {
-      database.run(sql);
-      saveDatabase();
+    exec: async (sql) => {
+      await pgPool.query(sql);
     },
-    pragma: () => {}
+    query: async (sql, params = []) => {
+      const result = await pgPool.query(sql, params);
+      return result.rows;
+    }
   };
 }
 
-function saveDatabase() {
-  if (db && db._db) {
-    const data = db._db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbPath, buffer);
-  }
-}
-
 async function initializeDatabase() {
-  const SQL = await initSqlJs();
-  
-  // Load existing database or create new one
-  let database;
-  if (fs.existsSync(dbPath)) {
-    const fileBuffer = fs.readFileSync(dbPath);
-    database = new SQL.Database(fileBuffer);
-  } else {
-    database = new SQL.Database();
-  }
-  
-  db = createDbWrapper(database);
-  db._db = database;
+  try {
+    // Test connection
+    await pool.query('SELECT NOW()');
+    console.log('✅ PostgreSQL connected successfully');
+    
+    db = createDbWrapper(pool);
 
-  // Create tables
-  db.exec(`
-    -- Admins table (main admin who manages resellers)
-    CREATE TABLE IF NOT EXISTS admins (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      email TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+    // Create tables with PostgreSQL syntax
+    await db.exec(`
+      -- Admins table (main admin who manages resellers)
+      CREATE TABLE IF NOT EXISTS admins (
+        id VARCHAR(255) PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Resellers table
-    CREATE TABLE IF NOT EXISTS resellers (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      email TEXT,
-      credits INTEGER DEFAULT 0,
-      max_users INTEGER DEFAULT 100,
-      is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      created_by TEXT,
-      FOREIGN KEY (created_by) REFERENCES admins(id)
-    );
+      -- Resellers table
+      CREATE TABLE IF NOT EXISTS resellers (
+        id VARCHAR(255) PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        credits INT DEFAULT 0,
+        max_users INT DEFAULT 100,
+        is_active INT DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by VARCHAR(255),
+        FOREIGN KEY (created_by) REFERENCES admins(id)
+      );
 
-    -- Users table (IPTV end users created by resellers)
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      max_connections INTEGER DEFAULT 1,
-      is_active INTEGER DEFAULT 1,
-      expiry_date DATETIME NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      reseller_id TEXT NOT NULL,
-      notes TEXT,
-      m3u_url TEXT,
-      FOREIGN KEY (reseller_id) REFERENCES resellers(id)
-    );
+      -- M3U Playlists table (stores uploaded M3U content) - must be before users
+      CREATE TABLE IF NOT EXISTS m3u_playlists (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        filename VARCHAR(255),
+        m3u_content TEXT,
+        m3u_url TEXT,
+        channel_count INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by VARCHAR(255)
+      );
 
-    -- Playlists/Bouquets table
-    CREATE TABLE IF NOT EXISTS bouquets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      channels TEXT,
-      m3u_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      -- Users table (IPTV end users created by resellers)
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(255) PRIMARY KEY,
+        username VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        max_connections INT DEFAULT 1,
+        is_active INT DEFAULT 1,
+        expiry_date TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reseller_id VARCHAR(255) NOT NULL,
+        notes TEXT,
+        m3u_url TEXT,
+        m3u_playlist_id VARCHAR(255),
+        FOREIGN KEY (reseller_id) REFERENCES resellers(id),
+        FOREIGN KEY (m3u_playlist_id) REFERENCES m3u_playlists(id)
+      );
 
-    -- User-Bouquet assignments
-    CREATE TABLE IF NOT EXISTS user_bouquets (
-      user_id TEXT NOT NULL,
-      bouquet_id TEXT NOT NULL,
-      PRIMARY KEY (user_id, bouquet_id),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (bouquet_id) REFERENCES bouquets(id) ON DELETE CASCADE
-    );
+      -- Playlists/Bouquets table
+      CREATE TABLE IF NOT EXISTS bouquets (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        channels TEXT,
+        m3u_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
 
-    -- Activity logs
-    CREATE TABLE IF NOT EXISTS activity_logs (
-      id TEXT PRIMARY KEY,
-      actor_type TEXT NOT NULL,
-      actor_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      details TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+      -- User-Bouquet assignments
+      CREATE TABLE IF NOT EXISTS user_bouquets (
+        user_id VARCHAR(255) NOT NULL,
+        bouquet_id VARCHAR(255) NOT NULL,
+        PRIMARY KEY (user_id, bouquet_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (bouquet_id) REFERENCES bouquets(id) ON DELETE CASCADE
+      );
 
-    -- Credit transactions
-    CREATE TABLE IF NOT EXISTS credit_transactions (
-      id TEXT PRIMARY KEY,
-      reseller_id TEXT NOT NULL,
-      amount INTEGER NOT NULL,
-      type TEXT NOT NULL,
-      description TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (reseller_id) REFERENCES resellers(id)
-    );
-  `);
+      -- Activity logs
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id VARCHAR(255) PRIMARY KEY,
+        actor_type VARCHAR(255) NOT NULL,
+        actor_id VARCHAR(255) NOT NULL,
+        action VARCHAR(255) NOT NULL,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
 
-  // Create default admin if not exists
-  const adminExists = db.prepare('SELECT id FROM admins WHERE username = ?').get('admin');
-  let adminId;
-  if (!adminExists) {
-    adminId = uuidv4();
-    const hashedPassword = bcrypt.hashSync('admin123', 10);
-    db.prepare(`
-      INSERT INTO admins (id, username, password, email)
-      VALUES (?, ?, ?, ?)
-    `).run(adminId, 'admin', hashedPassword, 'admin@iptv.local');
-    console.log('✅ Default admin created (username: admin, password: admin123)');
-  } else {
-    adminId = adminExists.id;
-  }
-
-  // Create admin reseller if not exists (admin acts as a reseller too)
-  const adminReseller = db.prepare('SELECT id FROM resellers WHERE username = ?').get('admin');
-  let resellerId;
-  if (!adminReseller) {
-    resellerId = uuidv4();
-    const hashedPassword = bcrypt.hashSync('admin123', 10);
-    db.prepare(`
-      INSERT INTO resellers (id, username, password, email, credits, max_users, is_active, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(resellerId, 'admin', hashedPassword, 'admin@iptv.local', 1000, 1000, 1, adminId);
-    console.log('✅ Admin reseller created');
-  } else {
-    resellerId = adminReseller.id;
-  }
-
-  // Create test user if not exists
-  const testUserExists = db.prepare('SELECT id FROM users WHERE username = ?').get('testuser');
-  if (!testUserExists) {
-    const testUserId = uuidv4();
-    const hashedPassword = bcrypt.hashSync('test123', 10);
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 365);
-    db.prepare(`
-      INSERT INTO users (id, username, password, max_connections, is_active, expiry_date, reseller_id, notes, m3u_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(testUserId, 'testuser', hashedPassword, 1, 1, expiryDate.toISOString(), resellerId, 'Test user for app', '');
-    console.log('✅ Test user created (username: testuser, password: test123)');
-  }
-
-  // Create sample bouquets
-  const bouquetExists = db.prepare('SELECT id FROM bouquets LIMIT 1').get();
-  if (!bouquetExists) {
-    const bouquets = [
-      { name: 'Sports Package', description: 'All sports channels', channels: JSON.stringify(['ESPN', 'Sky Sports', 'beIN Sports']) },
-      { name: 'Movies Package', description: 'Premium movie channels', channels: JSON.stringify(['HBO', 'Showtime', 'Starz']) },
-      { name: 'Kids Package', description: 'Children channels', channels: JSON.stringify(['Cartoon Network', 'Nickelodeon', 'Disney']) },
-      { name: 'News Package', description: 'News channels', channels: JSON.stringify(['CNN', 'BBC News', 'Al Jazeera']) },
-      { name: 'Full Package', description: 'All channels included', channels: JSON.stringify(['All Channels']) }
-    ];
-
-    const insertBouquet = db.prepare(`
-      INSERT INTO bouquets (id, name, description, channels)
-      VALUES (?, ?, ?, ?)
+      -- Credit transactions
+      CREATE TABLE IF NOT EXISTS credit_transactions (
+        id VARCHAR(255) PRIMARY KEY,
+        reseller_id VARCHAR(255) NOT NULL,
+        amount INT NOT NULL,
+        type VARCHAR(255) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (reseller_id) REFERENCES resellers(id)
+      );
     `);
+    
+    console.log('✅ Tables created/verified');
 
-    bouquets.forEach(b => {
-      insertBouquet.run(uuidv4(), b.name, b.description, b.channels);
-    });
-    console.log('✅ Sample bouquets created');
+    // Run migrations for existing databases
+    try {
+      // Check if m3u_playlist_id column exists in users table
+      const columnCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='users' AND column_name='m3u_playlist_id'
+      `);
+      
+      if (columnCheck.rows.length === 0) {
+        await pool.query('ALTER TABLE users ADD COLUMN m3u_playlist_id VARCHAR(255)');
+        console.log('✅ Migration: Added m3u_playlist_id column to users table');
+      }
+    } catch (migrationErr) {
+      console.log('Migration check:', migrationErr.message);
+    }
+
+    // Create default admin if not exists
+    const adminExists = await db.prepare('SELECT id FROM admins WHERE username = ?').get('admin');
+    let adminId;
+    if (!adminExists) {
+      adminId = uuidv4();
+      const hashedPassword = bcrypt.hashSync('admin123', 10);
+      await db.prepare(`
+        INSERT INTO admins (id, username, password, email)
+        VALUES (?, ?, ?, ?)
+      `).run(adminId, 'admin', hashedPassword, 'admin@iptv.local');
+      console.log('✅ Default admin created (username: admin, password: admin123)');
+    } else {
+      adminId = adminExists.id;
+    }
+
+    // Create admin reseller if not exists (admin acts as a reseller too)
+    const adminReseller = await db.prepare('SELECT id FROM resellers WHERE username = ?').get('admin');
+    let resellerId;
+    if (!adminReseller) {
+      resellerId = uuidv4();
+      const hashedPassword = bcrypt.hashSync('admin123', 10);
+      await db.prepare(`
+        INSERT INTO resellers (id, username, password, email, credits, max_users, is_active, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(resellerId, 'admin', hashedPassword, 'admin@iptv.local', 1000, 1000, 1, adminId);
+      console.log('✅ Admin reseller created');
+    } else {
+      resellerId = adminReseller.id;
+    }
+
+    // Create test user if not exists
+    const testUserExists = await db.prepare('SELECT id FROM users WHERE username = ?').get('testuser');
+    if (!testUserExists) {
+      const testUserId = uuidv4();
+      const hashedPassword = bcrypt.hashSync('test123', 10);
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 365);
+      await db.prepare(`
+        INSERT INTO users (id, username, password, max_connections, is_active, expiry_date, reseller_id, notes, m3u_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(testUserId, 'testuser', hashedPassword, 1, 1, expiryDate.toISOString(), resellerId, 'Test user for app', '');
+      console.log('✅ Test user created (username: testuser, password: test123)');
+    }
+
+    // Create sample bouquets
+    const bouquetExists = await db.prepare('SELECT id FROM bouquets LIMIT 1').get();
+    if (!bouquetExists) {
+      const bouquets = [
+        { name: 'Sports Package', description: 'All sports channels', channels: JSON.stringify(['ESPN', 'Sky Sports', 'beIN Sports']) },
+        { name: 'Movies Package', description: 'Premium movie channels', channels: JSON.stringify(['HBO', 'Showtime', 'Starz']) },
+        { name: 'Kids Package', description: 'Children channels', channels: JSON.stringify(['Cartoon Network', 'Nickelodeon', 'Disney']) },
+        { name: 'News Package', description: 'News channels', channels: JSON.stringify(['CNN', 'BBC News', 'Al Jazeera']) },
+        { name: 'Full Package', description: 'All channels included', channels: JSON.stringify(['All Channels']) }
+      ];
+
+      for (const b of bouquets) {
+        await db.prepare(`
+          INSERT INTO bouquets (id, name, description, channels)
+          VALUES (?, ?, ?, ?)
+        `).run(uuidv4(), b.name, b.description, b.channels);
+      }
+      console.log('✅ Sample bouquets created');
+    }
+
+    console.log('✅ Database initialized successfully');
+  } catch (err) {
+    console.error('❌ Database initialization error:', err);
+    throw err;
   }
-
-  console.log('✅ Database initialized');
 }
 
 function getDb() {

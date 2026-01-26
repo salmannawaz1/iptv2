@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="MaterialCustomSwitch">
+        <attr name="textHead" format="string" />
+        <attr name="textOn" format="string" />
+        <attr name="textOff" format="string" />
+        <attr name="checked" format="boolean" />
+        <!-- Text color attributes -->
+        <attr name="textHeadColor" format="color|reference" />
+        <attr name="textDescColor" format="color|reference" />
+        <attr name="textOnColor" format="color|reference" />
+        <attr name="textOffColor" format="color|reference" />
+    </declare-styleable>
+</resources>

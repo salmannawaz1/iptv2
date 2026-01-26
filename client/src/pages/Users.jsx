@@ -15,6 +15,7 @@ import {
 export default function Users() {
   const [users, setUsers] = useState([])
   const [bouquets, setBouquets] = useState([])
+  const [playlists, setPlaylists] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -28,12 +29,14 @@ export default function Users() {
     expiry_days: 30,
     notes: '',
     bouquet_ids: [],
-    m3u_url: ''
+    m3u_url: '',
+    m3u_playlist_id: ''
   })
 
   useEffect(() => {
     fetchUsers()
     fetchBouquets()
+    fetchPlaylists()
   }, [])
 
   const fetchUsers = async () => {
@@ -53,6 +56,15 @@ export default function Users() {
       setBouquets(response.data)
     } catch (error) {
       console.error('Failed to fetch bouquets')
+    }
+  }
+
+  const fetchPlaylists = async () => {
+    try {
+      const response = await api.get('/m3u')
+      setPlaylists(response.data)
+    } catch (error) {
+      console.error('Failed to fetch playlists')
     }
   }
 
@@ -116,7 +128,8 @@ export default function Users() {
       expiry_days: 30,
       notes: user.notes || '',
       bouquet_ids: [],
-      m3u_url: user.m3u_url || ''
+      m3u_url: user.m3u_url || '',
+      m3u_playlist_id: user.m3u_playlist_id || ''
     })
     setShowModal(true)
   }
@@ -130,7 +143,8 @@ export default function Users() {
       expiry_days: 30,
       notes: '',
       bouquet_ids: [],
-      m3u_url: ''
+      m3u_url: '',
+      m3u_playlist_id: ''
     })
   }
 
@@ -327,15 +341,33 @@ export default function Users() {
               </div>
 
               <div>
+                <label className="label">Assign Playlist</label>
+                <select
+                  value={formData.m3u_playlist_id}
+                  onChange={(e) => setFormData({ ...formData, m3u_playlist_id: e.target.value, m3u_url: '' })}
+                  className="input"
+                >
+                  <option value="">-- Select uploaded playlist --</option>
+                  {playlists.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.channel_count} channels)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="text-center text-gray-400 text-sm">- OR -</div>
+
+              <div>
                 <label className="label">M3U Playlist URL (optional)</label>
                 <input
                   type="url"
                   value={formData.m3u_url}
-                  onChange={(e) => setFormData({ ...formData, m3u_url: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, m3u_url: e.target.value, m3u_playlist_id: '' })}
                   className="input"
                   placeholder="https://example.com/playlist.m3u"
                 />
-                <p className="text-xs text-gray-400 mt-1">Paste a real M3U playlist URL to test with actual channels</p>
+                <p className="text-xs text-gray-400 mt-1">Or paste a URL directly</p>
               </div>
 
               <div className="flex gap-3 pt-4">

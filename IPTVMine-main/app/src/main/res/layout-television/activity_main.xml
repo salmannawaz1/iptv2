@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV-optimized main activity layout with overscan-safe margins -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <!-- Status Bar Background (hidden on TV) -->
+    <View
+        android:id="@+id/statusBarBackground"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:background="@color/bg_color"
+        android:visibility="gone" />
+
+    <!-- TV Toolbar with larger touch targets -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_alignParentTop="true"
+        android:paddingStart="48dp"
+        android:paddingEnd="48dp"
+        android:paddingTop="16dp"
+        android:background="@color/bg_color"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/toolbar_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="IPTVmine"
+                android:textColor="@android:color/white"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <!-- Search EditText (hidden by default) -->
+            <EditText
+                android:id="@+id/searchEditText"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_toStartOf="@+id/close_icon"
+                android:background="@drawable/edittext_background"
+                android:hint="Search channels..."
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:padding="16dp"
+                android:singleLine="true"
+                android:textColor="@android:color/white"
+                android:textColorHint="#80FFFFFF"
+                android:textSize="20sp"
+                android:visibility="gone" />
+
+            <!-- Close Icon -->
+            <ImageView
+                android:id="@+id/close_icon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/tv_button_selector"
+                android:contentDescription="Close"
+                android:focusable="true"
+                android:padding="14dp"
+                android:src="@drawable/ic_close"
+                android:visibility="gone"
+                app:tint="@android:color/white" />
+
+            <!-- Mic Icon for Voice Search -->
+            <ImageView
+                android:id="@+id/mic_icon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="@drawable/tv_button_selector"
+                android:contentDescription="Voice Search"
+                android:focusable="true"
+                android:nextFocusLeft="@id/search_icon"
+                android:nextFocusDown="@id/fragmentContainerView"
+                android:padding="14dp"
+                android:src="@drawable/ic_mic"
+                app:tint="@android:color/white" />
+
+            <!-- Search Icon -->
+            <ImageView
+                android:id="@+id/search_icon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="12dp"
+                android:layout_toStartOf="@id/mic_icon"
+                android:background="@drawable/tv_button_selector"
+                android:contentDescription="Search"
+                android:focusable="true"
+                android:nextFocusRight="@id/mic_icon"
+                android:nextFocusDown="@id/fragmentContainerView"
+                android:padding="14dp"
+                android:src="@drawable/search"
+                app:tint="@android:color/white" />
+        </RelativeLayout>
+    </androidx.appcompat.widget.Toolbar>
+
+    <!-- Fragment Container -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/fragmentContainerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/bottomBar"
+        android:layout_below="@id/toolbar"
+        android:focusable="true"
+        android:nextFocusUp="@id/search_icon"
+        android:nextFocusDown="@id/bottomBar" />
+
+    <!-- TV-optimized Bottom Navigation Bar -->
+    <me.ibrahimsn.lib.SmoothBottomBar
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:layout_alignParentBottom="true"
+        android:layout_marginStart="48dp"
+        android:layout_marginEnd="48dp"
+        android:layout_marginBottom="27dp"
+        android:focusable="true"
+        android:focusableInTouchMode="false"
+        android:nextFocusUp="@id/fragmentContainerView"
+        app:backgroundColor="@color/bg_color"
+        app:iconSize="32dp"
+        app:indicatorRadius="12dp"
+        app:itemPadding="16dp"
+        app:menu="@menu/menu_bottom"
+        app:sideMargins="16dp"
+        app:textSize="18sp" />
+</RelativeLayout>

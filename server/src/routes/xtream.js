@@ -4,12 +4,38 @@ const axios = require('axios');
 const router = express.Router();
 const { getDb } = require('../db/database');
 
-// Parse M3U playlist from URL with caching
-async function parseM3UFromUrl(url) {
-  console.log(`[parseM3U] Fetching: ${url}`);
-  const response = await axios.get(url);
-  const content = response.data;
-  console.log(`[parseM3U] Downloaded ${content.length} characters`);
+// Get M3U content from URL or stored playlist
+async function getM3UContent(user) {
+  const db = getDb();
+  
+  // First check if user has a stored playlist assigned
+  if (user.m3u_playlist_id) {
+    console.log(`[getM3UContent] User ${user.username} has playlist ID: ${user.m3u_playlist_id}`);
+    const playlist = db.prepare('SELECT m3u_content, m3u_url FROM m3u_playlists WHERE id = ?').get(user.m3u_playlist_id);
+    if (playlist && playlist.m3u_content) {
+      console.log(`[getM3UContent] Using stored playlist content (${playlist.m3u_content.length} chars)`);
+      return playlist.m3u_content;
+    }
+    if (playlist && playlist.m3u_url) {
+      console.log(`[getM3UContent] Fetching from playlist URL: ${playlist.m3u_url}`);
+      const response = await axios.get(playlist.m3u_url);
+      return response.data;
+    }
+  }
+  
+  // Fall back to user's m3u_url
+  if (user.m3u_url) {
+    console.log(`[getM3UContent] Fetching from user URL: ${user.m3u_url}`);
+    const response = await axios.get(user.m3u_url);
+    return response.data;
+  }
+  
+  return null;
+}
+
+// Parse M3U content
+function parseM3UContent(content) {
+  console.log(`[parseM3U] Parsing ${content.length} characters`);
   
   const lines = content.split('\n');
   const channels = [];
@@ -187,17 +213,20 @@ function getUserInfo(user) {
   };
 }
 
-// Cache for M3U data (in production, use Redis or database)
+// In-memory cache for M3U data - extended TTL for faster loading
 const m3uCache = new Map();
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours - much longer for better performance
+const parsedM3UCache = new Map(); // Cache parsed M3U data separately
 
 async function getLiveCategories(user) {
-  // If user has M3U URL, parse it and return categories
-  if (user.m3u_url) {
-    console.log(`[getLiveCategories] User ${user.username} has M3U URL: ${user.m3u_url}`);
+  // Check if user has M3U content (from stored playlist or URL)
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getLiveCategories] User ${user.username} has M3U source`);
     
     // Check cache first
-    const cacheKey = `categories_${user.m3u_url}`;
+    const cacheKey = `categories_${user.m3u_playlist_id || user.m3u_url}`;
     const cached = m3uCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       console.log(`[getLiveCategories] Using cached data (${cached.categories.length} categories)`);
@@ -205,8 +234,14 @@ async function getLiveCategories(user) {
     }
     
     try {
-      console.log('[getLiveCategories] Fetching M3U...');
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
+      console.log('[getLiveCategories] Getting M3U content...');
+      const content = await getM3UContent(user);
+      if (!content) {
+        console.log('[getLiveCategories] No M3U content found');
+        return getSampleCategories();
+      }
+      
+      const m3uData = parseM3UContent(content);
       console.log(`[getLiveCategories] Parsed ${m3uData.categories.length} categories, ${m3uData.channels.length} channels`);
       
       const categories = m3uData.categories.map((cat, idx) => ({
@@ -224,13 +259,16 @@ async function getLiveCategories(user) {
       return categories;
     } catch (err) {
       console.error('[getLiveCategories] Failed to load M3U:', err.message);
-      console.error(err);
     }
   } else {
-    console.log(`[getLiveCategories] User ${user.username} has NO M3U URL, returning sample data`);
+    console.log(`[getLiveCategories] User ${user.username} has NO M3U source, returning sample data`);
   }
   
   // Return sample live categories
+  return getSampleCategories();
+}
+
+function getSampleCategories() {
   return [
     { category_id: '1', category_name: 'General', parent_id: 0 },
     { category_id: '2', category_name: 'News', parent_id: 0 },
@@ -241,13 +279,15 @@ async function getLiveCategories(user) {
 }
 
 async function getLiveStreams(user, categoryId) {
-  // If user has M3U URL, parse it and return channels
-  if (user.m3u_url) {
-    console.log(`[getLiveStreams] User ${user.username} has M3U URL: ${user.m3u_url}`);
+  // Check if user has M3U content (from stored playlist or URL)
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getLiveStreams] User ${user.username} has M3U source`);
     console.log(`[getLiveStreams] Category filter: ${categoryId || 'none'}`);
     
     // Check cache first
-    const cacheKey = `streams_${user.m3u_url}_${categoryId || 'all'}`;
+    const cacheKey = `streams_${user.m3u_playlist_id || user.m3u_url}_${categoryId || 'all'}`;
     const cached = m3uCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       console.log(`[getLiveStreams] Using cached data (${cached.streams.length} streams)`);
@@ -255,8 +295,14 @@ async function getLiveStreams(user, categoryId) {
     }
     
     try {
-      console.log('[getLiveStreams] Fetching M3U...');
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
+      console.log('[getLiveStreams] Getting M3U content...');
+      const content = await getM3UContent(user);
+      if (!content) {
+        console.log('[getLiveStreams] No M3U content found');
+        return getSampleStreams(categoryId);
+      }
+      
+      const m3uData = parseM3UContent(content);
       console.log(`[getLiveStreams] Parsed ${m3uData.channels.length} channels`);
       let streams = m3uData.channels;
       
@@ -272,19 +318,19 @@ async function getLiveStreams(user, categoryId) {
       });
       
       console.log(`[getLiveStreams] Returning ${streams.length} streams`);
-      if (streams.length > 0) {
-        console.log(`[getLiveStreams] First stream:`, JSON.stringify(streams[0]));
-      }
       return streams;
     } catch (err) {
       console.error('[getLiveStreams] Failed to load M3U:', err.message);
-      console.error(err);
     }
   } else {
-    console.log(`[getLiveStreams] User ${user.username} has NO M3U URL, returning sample data`);
+    console.log(`[getLiveStreams] User ${user.username} has NO M3U source, returning sample data`);
   }
   
   // Return sample live streams
+  return getSampleStreams(categoryId);
+}
+
+function getSampleStreams(categoryId) {
   const streams = [
     { num: 1, name: 'Channel 1', stream_type: 'live', stream_id: 1, stream_icon: '', epg_channel_id: '', added: '', category_id: '1', custom_sid: '', tv_archive: 0, direct_source: 'http://sample-stream.com/live/1.m3u8', tv_archive_duration: 0 },
     { num: 2, name: 'Channel 2', stream_type: 'live', stream_id: 2, stream_icon: '', epg_channel_id: '', added: '', category_id: '1', custom_sid: '', tv_archive: 0, direct_source: 'http://sample-stream.com/live/2.m3u8', tv_archive_duration: 0 },
@@ -299,19 +345,36 @@ async function getLiveStreams(user, categoryId) {
 }
 
 async function getVodCategories(user) {
-  // If user has M3U URL, parse it and return movie categories
-  if (user.m3u_url) {
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getVodCategories] User ${user.username} has M3U source`);
+    
+    const cacheKey = `vod_categories_${user.m3u_playlist_id || user.m3u_url}`;
+    const cached = m3uCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[getVodCategories] Using cached data (${cached.data.length} categories)`);
+      return cached.data;
+    }
+    
     try {
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
-      const movieCategories = new Set();
-      m3uData.movies.forEach(m => movieCategories.add(m.category_id));
-      return Array.from(movieCategories).map(cat => ({
-        category_id: cat,
-        category_name: cat,
-        parent_id: 0
-      }));
+      const content = await getM3UContent(user);
+      if (content) {
+        const m3uData = parseM3UContent(content);
+        const movieCategories = new Set();
+        m3uData.movies.forEach(m => movieCategories.add(m.category_id));
+        const categories = Array.from(movieCategories).map(cat => ({
+          category_id: cat,
+          category_name: cat,
+          parent_id: 0
+        }));
+        
+        m3uCache.set(cacheKey, { data: categories, timestamp: Date.now() });
+        console.log(`[getVodCategories] Parsed ${categories.length} movie categories`);
+        return categories;
+      }
     } catch (err) {
-      console.error('Failed to load M3U:', err);
+      console.error('[getVodCategories] Failed to load M3U:', err.message);
     }
   }
   
@@ -324,25 +387,40 @@ async function getVodCategories(user) {
 }
 
 async function getVodStreams(user, categoryId) {
-  // If user has M3U URL, parse it and return movies
-  if (user.m3u_url) {
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getVodStreams] User ${user.username} has M3U source`);
+    
+    const cacheKey = `vod_streams_${user.m3u_playlist_id || user.m3u_url}_${categoryId || 'all'}`;
+    const cached = m3uCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[getVodStreams] Using cached data (${cached.data.length} movies)`);
+      return cached.data;
+    }
+    
     try {
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
-      let movies = m3uData.movies.map(m => ({
-        ...m,
-        rating: '0',
-        rating_5based: 0,
-        container_extension: 'mp4',
-        stream_type: 'movie'
-      }));
-      
-      if (categoryId) {
-        movies = movies.filter(m => m.category_id === categoryId);
+      const content = await getM3UContent(user);
+      if (content) {
+        const m3uData = parseM3UContent(content);
+        let movies = m3uData.movies.map(m => ({
+          ...m,
+          rating: '0',
+          rating_5based: 0,
+          container_extension: 'mp4',
+          stream_type: 'movie'
+        }));
+        
+        if (categoryId) {
+          movies = movies.filter(m => m.category_id === categoryId);
+        }
+        
+        m3uCache.set(cacheKey, { data: movies, timestamp: Date.now() });
+        console.log(`[getVodStreams] Parsed ${movies.length} movies`);
+        return movies;
       }
-      
-      return movies;
     } catch (err) {
-      console.error('Failed to load M3U:', err);
+      console.error('[getVodStreams] Failed to load M3U:', err.message);
     }
   }
   
@@ -381,19 +459,36 @@ function getVodInfo(vodId) {
 }
 
 async function getSeriesCategories(user) {
-  // If user has M3U URL, parse it and return series categories
-  if (user.m3u_url) {
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getSeriesCategories] User ${user.username} has M3U source`);
+    
+    const cacheKey = `series_categories_${user.m3u_playlist_id || user.m3u_url}`;
+    const cached = m3uCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[getSeriesCategories] Using cached data (${cached.data.length} categories)`);
+      return cached.data;
+    }
+    
     try {
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
-      const seriesCategories = new Set();
-      m3uData.series.forEach(s => seriesCategories.add(s.category_id));
-      return Array.from(seriesCategories).map(cat => ({
-        category_id: cat,
-        category_name: cat,
-        parent_id: 0
-      }));
+      const content = await getM3UContent(user);
+      if (content) {
+        const m3uData = parseM3UContent(content);
+        const seriesCategories = new Set();
+        m3uData.series.forEach(s => seriesCategories.add(s.category_id));
+        const categories = Array.from(seriesCategories).map(cat => ({
+          category_id: cat,
+          category_name: cat,
+          parent_id: 0
+        }));
+        
+        m3uCache.set(cacheKey, { data: categories, timestamp: Date.now() });
+        console.log(`[getSeriesCategories] Parsed ${categories.length} series categories`);
+        return categories;
+      }
     } catch (err) {
-      console.error('Failed to load M3U:', err);
+      console.error('[getSeriesCategories] Failed to load M3U:', err.message);
     }
   }
   
@@ -405,34 +500,49 @@ async function getSeriesCategories(user) {
 }
 
 async function getSeries(user, categoryId) {
-  // If user has M3U URL, parse it and return series
-  if (user.m3u_url) {
+  const hasM3U = user.m3u_playlist_id || user.m3u_url;
+  
+  if (hasM3U) {
+    console.log(`[getSeries] User ${user.username} has M3U source`);
+    
+    const cacheKey = `series_${user.m3u_playlist_id || user.m3u_url}_${categoryId || 'all'}`;
+    const cached = m3uCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[getSeries] Using cached data (${cached.data.length} series)`);
+      return cached.data;
+    }
+    
     try {
-      const m3uData = await parseM3UFromUrl(user.m3u_url);
-      let series = m3uData.series.map((s, idx) => ({
-        num: idx + 1,
-        name: s.name,
-        series_id: s.stream_id,
-        cover: s.stream_icon,
-        plot: '',
-        cast: '',
-        director: '',
-        genre: s.category_id,
-        release_date: '',
-        rating: '0',
-        rating_5based: 0,
-        youtube_trailer: '',
-        category_id: s.category_id,
-        backdrop_path: []
-      }));
-      
-      if (categoryId) {
-        series = series.filter(s => s.category_id === categoryId);
+      const content = await getM3UContent(user);
+      if (content) {
+        const m3uData = parseM3UContent(content);
+        let series = m3uData.series.map((s, idx) => ({
+          num: idx + 1,
+          name: s.name,
+          series_id: s.stream_id,
+          cover: s.stream_icon,
+          plot: '',
+          cast: '',
+          director: '',
+          genre: s.category_id,
+          release_date: '',
+          rating: '0',
+          rating_5based: 0,
+          youtube_trailer: '',
+          category_id: s.category_id,
+          backdrop_path: []
+        }));
+        
+        if (categoryId) {
+          series = series.filter(s => s.category_id === categoryId);
+        }
+        
+        m3uCache.set(cacheKey, { data: series, timestamp: Date.now() });
+        console.log(`[getSeries] Parsed ${series.length} series`);
+        return series;
       }
-      
-      return series;
     } catch (err) {
-      console.error('Failed to load M3U:', err);
+      console.error('[getSeries] Failed to load M3U:', err.message);
     }
   }
   

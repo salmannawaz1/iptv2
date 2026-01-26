@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Resellers from './pages/Resellers'
+import Playlists from './pages/Playlists'
 import Settings from './pages/Settings'
 import Layout from './components/Layout'
 
@@ -40,6 +41,11 @@ function App() {
         <Route path="resellers" element={
           <AdminRoute>
             <Resellers />
+          </AdminRoute>
+        } />
+        <Route path="playlists" element={
+          <AdminRoute>
+            <Playlists />
           </AdminRoute>
         } />
         <Route path="settings" element={<Settings />} />
