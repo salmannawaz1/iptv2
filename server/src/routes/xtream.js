@@ -11,14 +11,14 @@ async function getM3UContent(user) {
   // First check if user has a stored playlist assigned
   if (user.m3u_playlist_id) {
     console.log(`[getM3UContent] User ${user.username} has playlist ID: ${user.m3u_playlist_id}`);
-    const playlist = db.prepare('SELECT m3u_content, m3u_url FROM m3u_playlists WHERE id = ?').get(user.m3u_playlist_id);
+    const playlist = await db.prepare('SELECT m3u_content, m3u_url FROM m3u_playlists WHERE id = ?').get(user.m3u_playlist_id);
     if (playlist && playlist.m3u_content) {
       console.log(`[getM3UContent] Using stored playlist content (${playlist.m3u_content.length} chars)`);
       return playlist.m3u_content;
     }
     if (playlist && playlist.m3u_url) {
       console.log(`[getM3UContent] Fetching from playlist URL: ${playlist.m3u_url}`);
-      const response = await axios.get(playlist.m3u_url);
+      const response = await axios.get(playlist.m3u_url, { timeout: 60000 });
       return response.data;
     }
   }
@@ -26,7 +26,7 @@ async function getM3UContent(user) {
   // Fall back to user's m3u_url
   if (user.m3u_url) {
     console.log(`[getM3UContent] Fetching from user URL: ${user.m3u_url}`);
-    const response = await axios.get(user.m3u_url);
+    const response = await axios.get(user.m3u_url, { timeout: 60000 });
     return response.data;
   }
   
@@ -116,7 +116,7 @@ router.get('/player_api.php', async (req, res) => {
     const db = getDb();
 
     // Authenticate user
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     
     if (!user) {
       return res.status(401).json({ user_info: { auth: 0, message: 'Invalid credentials' } });
@@ -579,25 +579,98 @@ function getSeriesInfo(seriesId) {
   };
 }
 
+// Helper function to validate user for stream access
+async function validateStreamUser(username, password) {
+  const db = getDb();
+  const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  
+  if (!user) return null;
+  
+  const passwordValid = bcrypt.compareSync(password, user.password);
+  if (!passwordValid) return null;
+  
+  if (!user.is_active) return null;
+  
+  const expiry = new Date(user.expiry_date);
+  if (expiry < new Date()) return null;
+  
+  return user;
+}
+
 // Live stream endpoint
-router.get('/live/:username/:password/:streamId.ts', (req, res) => {
+router.get('/live/:username/:password/:streamId.ts', async (req, res) => {
   const { username, password, streamId } = req.params;
-  // In production, validate user and redirect to actual stream
-  res.redirect(`http://sample-stream.com/live/${streamId}.m3u8`);
+  
+  const user = await validateStreamUser(username, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Get stream URL from cache or M3U data
+  try {
+    const content = await getM3UContent(user);
+    if (content) {
+      const m3uData = parseM3UContent(content);
+      const stream = m3uData.channels.find(c => c.stream_id === parseInt(streamId));
+      if (stream && stream.direct_source) {
+        return res.redirect(stream.direct_source);
+      }
+    }
+  } catch (err) {
+    console.error('[Live Stream] Error:', err.message);
+  }
+  
+  res.status(404).json({ error: 'Stream not found' });
 });
 
 // VOD stream endpoint
-router.get('/movie/:username/:password/:streamId.:ext', (req, res) => {
+router.get('/movie/:username/:password/:streamId.:ext', async (req, res) => {
   const { username, password, streamId, ext } = req.params;
-  // In production, validate user and redirect to actual stream
-  res.redirect(`http://sample-stream.com/movie/${streamId}.${ext}`);
+  
+  const user = await validateStreamUser(username, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const content = await getM3UContent(user);
+    if (content) {
+      const m3uData = parseM3UContent(content);
+      const movie = m3uData.movies.find(m => m.stream_id === parseInt(streamId));
+      if (movie && movie.direct_source) {
+        return res.redirect(movie.direct_source);
+      }
+    }
+  } catch (err) {
+    console.error('[Movie Stream] Error:', err.message);
+  }
+  
+  res.status(404).json({ error: 'Movie not found' });
 });
 
 // Series stream endpoint
-router.get('/series/:username/:password/:streamId.:ext', (req, res) => {
+router.get('/series/:username/:password/:streamId.:ext', async (req, res) => {
   const { username, password, streamId, ext } = req.params;
-  // In production, validate user and redirect to actual stream
-  res.redirect(`http://sample-stream.com/series/${streamId}.${ext}`);
+  
+  const user = await validateStreamUser(username, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  try {
+    const content = await getM3UContent(user);
+    if (content) {
+      const m3uData = parseM3UContent(content);
+      const episode = m3uData.series.find(s => s.stream_id === parseInt(streamId));
+      if (episode && episode.direct_source) {
+        return res.redirect(episode.direct_source);
+      }
+    }
+  } catch (err) {
+    console.error('[Series Stream] Error:', err.message);
+  }
+  
+  res.status(404).json({ error: 'Episode not found' });
 });
 
 module.exports = router;
