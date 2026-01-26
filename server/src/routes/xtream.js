@@ -5,10 +5,16 @@ const router = express.Router();
 const { getDb } = require('../db/database');
 
 // =============================================================================
-// GLOBAL M3U CACHE - Parse once, use everywhere
+// MEMORY-OPTIMIZED M3U CACHE - Limit channels to prevent OOM
 // =============================================================================
 const globalM3UCache = new Map();
-const CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours cache
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours cache
+const MAX_CHANNELS = 5000; // Limit to prevent memory issues on 512MB
+const MAX_MOVIES = 2000;
+const MAX_SERIES = 1000;
+
+// Parsing lock to prevent concurrent parsing
+const parsingLocks = new Map();
 
 // Get cached parsed M3U data for a user
 async function getCachedM3UData(user) {
@@ -17,31 +23,46 @@ async function getCachedM3UData(user) {
   // Check cache first
   const cached = globalM3UCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`[M3U Cache] HIT for ${user.username} (${cached.data.channels.length} channels)`);
+    console.log(`[M3U Cache] HIT for ${user.username}`);
     return cached.data;
+  }
+  
+  // Check if already parsing (prevent concurrent parsing)
+  if (parsingLocks.has(cacheKey)) {
+    console.log(`[M3U Cache] Waiting for existing parse...`);
+    return await parsingLocks.get(cacheKey);
   }
   
   console.log(`[M3U Cache] MISS for ${user.username}, fetching...`);
   
-  // Fetch and parse
-  const content = await getM3UContent(user);
-  if (!content) {
-    console.log(`[M3U Cache] No content for ${user.username}`);
-    return null;
-  }
+  // Create parsing promise
+  const parsePromise = (async () => {
+    try {
+      const content = await getM3UContent(user);
+      if (!content) {
+        console.log(`[M3U Cache] No content for ${user.username}`);
+        return null;
+      }
+      
+      console.log(`[M3U Cache] Parsing ${content.length} chars (limited)...`);
+      const startTime = Date.now();
+      const data = parseM3UContentLimited(content);
+      console.log(`[M3U Cache] Parsed in ${Date.now() - startTime}ms`);
+      
+      // Cache the parsed data
+      globalM3UCache.set(cacheKey, {
+        data,
+        timestamp: Date.now()
+      });
+      
+      return data;
+    } finally {
+      parsingLocks.delete(cacheKey);
+    }
+  })();
   
-  console.log(`[M3U Cache] Parsing ${content.length} chars...`);
-  const startTime = Date.now();
-  const data = parseM3UContent(content);
-  console.log(`[M3U Cache] Parsed in ${Date.now() - startTime}ms: ${data.channels.length} channels, ${data.movies.length} movies, ${data.series.length} series`);
-  
-  // Cache the parsed data
-  globalM3UCache.set(cacheKey, {
-    data,
-    timestamp: Date.now()
-  });
-  
-  return data;
+  parsingLocks.set(cacheKey, parsePromise);
+  return await parsePromise;
 }
 
 // Get M3U content from URL or stored playlist
@@ -91,11 +112,10 @@ async function getM3UContent(user) {
   return null;
 }
 
-// Parse M3U content
-function parseM3UContent(content) {
-  console.log(`[parseM3U] Parsing ${content.length} characters`);
+// Memory-optimized M3U parser with limits
+function parseM3UContentLimited(content) {
+  console.log(`[parseM3U] Parsing ${content.length} characters with limits...`);
   
-  const lines = content.split('\n');
   const channels = [];
   const movies = [];
   const series = [];
@@ -104,12 +124,25 @@ function parseM3UContent(content) {
   let currentChannel = null;
   let currentGroup = 'Uncategorized';
   let streamId = 1;
+  let lineStart = 0;
+  let lineEnd = 0;
   
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+  // Parse line by line without splitting entire content (memory efficient)
+  while (lineEnd < content.length) {
+    // Find end of line
+    lineEnd = content.indexOf('\n', lineStart);
+    if (lineEnd === -1) lineEnd = content.length;
+    
+    const line = content.substring(lineStart, lineEnd).trim();
+    lineStart = lineEnd + 1;
+    
+    // Stop if we've reached limits
+    if (channels.length >= MAX_CHANNELS && movies.length >= MAX_MOVIES && series.length >= MAX_SERIES) {
+      console.log(`[parseM3U] Reached limits, stopping parse`);
+      break;
+    }
     
     if (line.startsWith('#EXTINF:')) {
-      // Parse channel info
       const nameMatch = line.match(/,(.+)$/);
       const groupMatch = line.match(/group-title="([^"]+)"/i);
       const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
@@ -139,24 +172,31 @@ function parseM3UContent(content) {
       
       streamId++;
     } else if (line && !line.startsWith('#') && currentChannel) {
-      // This is the stream URL
       currentChannel.direct_source = line;
       
-      // Categorize based on group name
       const groupLower = currentGroup.toLowerCase();
       if (groupLower.includes('movie') || groupLower.includes('vod')) {
-        movies.push({ ...currentChannel, stream_type: 'movie' });
+        if (movies.length < MAX_MOVIES) {
+          movies.push({ ...currentChannel, stream_type: 'movie' });
+        }
       } else if (groupLower.includes('series')) {
-        series.push({ ...currentChannel, stream_type: 'series' });
+        if (series.length < MAX_SERIES) {
+          series.push({ ...currentChannel, stream_type: 'series' });
+        }
       } else {
-        channels.push(currentChannel);
+        if (channels.length < MAX_CHANNELS) {
+          channels.push(currentChannel);
+        }
       }
       
       currentChannel = null;
     }
   }
   
-  console.log(`[parseM3U] Parsed: ${categories.size} categories, ${channels.length} channels, ${movies.length} movies, ${series.length} series`);
+  console.log(`[parseM3U] Result: ${categories.size} categories, ${channels.length} channels, ${movies.length} movies, ${series.length} series`);
+  
+  // Force garbage collection hint
+  content = null;
   
   return {
     categories: Array.from(categories),

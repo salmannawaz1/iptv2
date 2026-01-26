@@ -1,23 +1,24 @@
 package com.proiptv.app.util
 
 object AppConfig {
-    // List of possible server URLs - app will try each one
+    // Production server URL - Render deployment
+    private const val PRODUCTION_URL = "https://iptv-server-z1l0.onrender.com"
+    
+    // Server URLs list (production first, fallback local for dev)
     private val SERVER_URLS = listOf(
-        "http://192.168.100.78:5000",             // Your local WiFi (FIRST PRIORITY)
-        "https://iptv-server-z1l0.onrender.com",  // Online Render server
-        "http://localhost:5000"                    // For emulator/testing
+        PRODUCTION_URL,
+        "http://localhost:5000"
     )
     
     // API endpoint for Xtream Codes
     const val PLAYER_API_PATH = "/player_api.php"
     
-    // Get the first available server URL
+    // Get the server URL - always use production
     fun getServerUrl(): String {
-        // Try to find the best server by checking if it's the current IP
-        return SERVER_URLS.first()
+        return PRODUCTION_URL
     }
     
-    // Try all server URLs until one works
+    // Get all server URLs for fallback mechanism
     fun getServerUrls(): List<String> {
         return SERVER_URLS
     }
