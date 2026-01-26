@@ -151,7 +151,7 @@ async function initializeDatabase() {
         created_by VARCHAR(255)
       );
 
-      -- Users table (IPTV end users created by resellers)
+      -- Users table (IPTV end users created by resellers or admin)
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(255) PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
@@ -160,11 +160,12 @@ async function initializeDatabase() {
         is_active INT DEFAULT 1,
         expiry_date TIMESTAMP NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        reseller_id VARCHAR(255) NOT NULL,
+        reseller_id VARCHAR(255),
+        created_by_admin VARCHAR(255),
         notes TEXT,
         m3u_url TEXT,
         m3u_playlist_id VARCHAR(255),
-        FOREIGN KEY (reseller_id) REFERENCES resellers(id),
+        FOREIGN KEY (reseller_id) REFERENCES resellers(id) ON DELETE SET NULL,
         FOREIGN KEY (m3u_playlist_id) REFERENCES m3u_playlists(id)
       );
 
@@ -213,7 +214,7 @@ async function initializeDatabase() {
 
     // Run migrations for existing databases
     try {
-      // Check if m3u_playlist_id column exists in users table
+      // Migration 1: Check if m3u_playlist_id column exists in users table
       const columnCheck = await pool.query(`
         SELECT column_name 
         FROM information_schema.columns 
@@ -223,6 +224,26 @@ async function initializeDatabase() {
       if (columnCheck.rows.length === 0) {
         await pool.query('ALTER TABLE users ADD COLUMN m3u_playlist_id VARCHAR(255)');
         console.log('✅ Migration: Added m3u_playlist_id column to users table');
+      }
+
+      // Migration 2: Make reseller_id nullable and fix FK constraint
+      try {
+        // Drop the old NOT NULL constraint and FK, recreate with ON DELETE SET NULL
+        await pool.query(`ALTER TABLE users ALTER COLUMN reseller_id DROP NOT NULL`);
+        console.log('✅ Migration: Made reseller_id nullable');
+      } catch (e) {
+        // Column might already be nullable
+      }
+
+      // Migration 3: Add created_by_admin column if not exists
+      const adminColCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='users' AND column_name='created_by_admin'
+      `);
+      if (adminColCheck.rows.length === 0) {
+        await pool.query('ALTER TABLE users ADD COLUMN created_by_admin VARCHAR(255)');
+        console.log('✅ Migration: Added created_by_admin column to users table');
       }
     } catch (migrationErr) {
       console.log('Migration check:', migrationErr.message);

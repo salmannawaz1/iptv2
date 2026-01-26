@@ -107,12 +107,24 @@ router.post('/', authenticateToken, isReseller, isActiveReseller, async (req, re
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + (parseInt(expiry_days) || 30));
 
-    // Get reseller ID - for resellers use their ID, for admin use provided reseller_id or their own ID
-    let resellerId = req.user.id;
+    // Get reseller ID - for resellers use their ID, for admin use provided reseller_id or null
+    let resellerId = null;
+    let createdByAdmin = null;
+    
     if (req.user.role === 'reseller') {
       resellerId = req.user.id;
-    } else if (req.body.reseller_id) {
-      resellerId = req.body.reseller_id;
+    } else if (req.user.role === 'admin') {
+      // Admin creating user - use provided reseller_id or find admin's reseller account
+      if (req.body.reseller_id) {
+        resellerId = req.body.reseller_id;
+      } else {
+        // Try to find admin's reseller account
+        const adminReseller = await db.prepare('SELECT id FROM resellers WHERE username = ?').get('admin');
+        if (adminReseller) {
+          resellerId = adminReseller.id;
+        }
+      }
+      createdByAdmin = req.user.id;
     }
 
     const userNotes = notes || '';
@@ -121,9 +133,9 @@ router.post('/', authenticateToken, isReseller, isActiveReseller, async (req, re
     const userPlaylistId = m3u_playlist_id || null;
 
     await db.prepare(`
-      INSERT INTO users (id, username, password, max_connections, expiry_date, reseller_id, notes, m3u_url, m3u_playlist_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, username, hashedPassword, maxConn, expiryDate.toISOString(), resellerId, userNotes, userM3uUrl, userPlaylistId);
+      INSERT INTO users (id, username, password, max_connections, expiry_date, reseller_id, created_by_admin, notes, m3u_url, m3u_playlist_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, username, hashedPassword, maxConn, expiryDate.toISOString(), resellerId, createdByAdmin, userNotes, userM3uUrl, userPlaylistId);
 
     // Assign bouquets
     if (bouquet_ids && bouquet_ids.length > 0) {
