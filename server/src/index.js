@@ -11,7 +11,7 @@ const statsRoutes = require('./routes/stats');
 const xtreamRoutes = require('./routes/xtream');
 const m3uRoutes = require('./routes/m3u');
 
-const { initializeDatabase } = require('./db/database');
+const { initializeDatabase, closeDatabase } = require('./db/database');
 
 const app = express();
 const PORT = process.env.PORT || 80;
@@ -96,9 +96,36 @@ async function startServer() {
     res.status(500).json({ error: 'Something went wrong!' });
   });
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 IPTV Reseller API running on port ${PORT}`);
   });
+
+  // Graceful shutdown handlers
+  const gracefulShutdown = async (signal) => {
+    console.log(`\n${signal} received. Closing server gracefully...`);
+    
+    server.close(async () => {
+      console.log('HTTP server closed');
+      
+      try {
+        await closeDatabase();
+        console.log('Database connections closed');
+        process.exit(0);
+      } catch (err) {
+        console.error('Error during shutdown:', err);
+        process.exit(1);
+      }
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.error('Forcing shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 startServer().catch(console.error);

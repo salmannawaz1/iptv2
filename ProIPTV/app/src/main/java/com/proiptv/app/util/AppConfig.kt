@@ -1,8 +1,8 @@
 package com.proiptv.app.util
 
 object AppConfig {
-    // Production server URL - Render deployment
-    private const val PRODUCTION_URL = "https://iptv-server-z1l0.onrender.com"
+    // Production server URL - DigitalOcean deployment
+    private const val PRODUCTION_URL = "https://lobster-app-hhd77.ondigitalocean.app"
     
     // Server URLs list (production first, fallback local for dev)
     private val SERVER_URLS = listOf(

@@ -26,7 +26,14 @@ if (process.env.DATABASE_URL) {
         database: dbUrl.pathname.slice(1),
         ssl: {
           rejectUnauthorized: false
-        }
+        },
+        // Connection pool settings
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        // Keepalive settings to prevent idle connection drops
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000
       };
     } else {
       dbConfig = {
@@ -37,7 +44,14 @@ if (process.env.DATABASE_URL) {
         database: dbUrl.pathname.slice(1),
         ssl: {
           rejectUnauthorized: false
-        }
+        },
+        // Connection pool settings
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+        // Keepalive settings to prevent idle connection drops
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000
       };
     }
   } catch (err) {
@@ -46,7 +60,14 @@ if (process.env.DATABASE_URL) {
       connectionString: process.env.DATABASE_URL,
       ssl: {
         rejectUnauthorized: false
-      }
+      },
+      // Connection pool settings
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      // Keepalive settings to prevent idle connection drops
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000
     };
   }
 } else {
@@ -54,8 +75,22 @@ if (process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-// PostgreSQL connection pool
+// PostgreSQL connection pool with error handling
 const pool = new Pool(dbConfig);
+
+// Handle pool errors to prevent crashes
+pool.on('error', (err, client) => {
+  console.error('❌ Unexpected error on idle client', err);
+});
+
+// Handle pool connection events
+pool.on('connect', (client) => {
+  console.log('🔌 New client connected to pool');
+});
+
+pool.on('remove', (client) => {
+  console.log('🔌 Client removed from pool');
+});
 
 let db = null;
 
@@ -324,4 +359,14 @@ function getDb() {
   return db;
 }
 
-module.exports = { getDb, initializeDatabase };
+async function closeDatabase() {
+  try {
+    await pool.end();
+    console.log('✅ Database pool closed');
+  } catch (err) {
+    console.error('❌ Error closing database pool:', err);
+    throw err;
+  }
+}
+
+module.exports = { getDb, initializeDatabase, closeDatabase };
